@@ -1,12 +1,12 @@
 = STORMATIC | HOW TO =
-:subtitle: DOCUMENTATION STORMATIC
+:subtitle: DOCUMENTATION STRMTC
 :companyname: MAC2
 :corpname: MAC2
 :orgname: MAC2
 :creator: Valentino Quinola
-:title: Documentation du module Stormatic
-:subject: Ce document est une documentation du module Stormatic.
-:keywords: Stormatic
+:title: Documentation du module Strmtc
+:subject: Ce document est une documentation du module Strmtc.
+:keywords: Strmtc
 // Date du document :
 :docdate: 2023-02-03
 :toc: manual
@@ -14,24 +14,24 @@
 
 <<<
 
-== DOCUMENTATION DU MODULE STORMATIC
+== DOCUMENTATION DU MODULE STRMTC
 
-Ce document est une documentation du module Stormatic situé dans le répertoire `custom/stormatic`.
-Il a pour objectif de simplifier l'utilisation et l'installation du module pour les équipes de Stormatic.
+Ce document est une documentation du module Strmtc situé dans le répertoire `custom/strmtc`.
+Il a pour objectif de simplifier l'utilisation et l'installation du module pour les équipes de Strmtc.
 
 
 *Version actuelle du document*
 
 [options="header",format="csv"]
 |===
-Author/Développeur, Entreprise, Client, Date, Version
-Valentino Quinola, MAC2, Stormatic, 2023-02-03, Version 1.0
+Author/Développeur, Client, Date, Version
+Valentino Quinola, Strmtc, 2023-02-03, Version 1.0
 |===
 
 *Note*
 [NOTE]
 ==============
-__ Le module Stormatic est spécifique aux besoins de l'entreprise Stormatic. __ 
+__ Le module Strmtc est spécifique aux besoins de l'entreprise STRMTC. __ 
 __ Il ne peut-être utilisé que dans ce cadre dans l'état actuel où il a été développé. __
 ==============
 
@@ -56,17 +56,17 @@ __Ce module a été crée et testé sous Dolibarr 15. Il devrait être compatibl
 == INSTALLATION
 
 === NOUVELLE INSTALLATION ET CONFIGURATION AUTOMATIQUE
-Grâce à l'import d'un fichier SQL, le module Stormatic est pré-configuré. Aucune configuration manuelle n'est à faire. +
+Grâce à l'import d'un fichier SQL, le module Strmtc est pré-configuré. Aucune configuration manuelle n'est à faire. +
 Voici les différentes étapes de l'installation : + 
 
 . Importer le fichier stormatic.sql (situé à la racine de Dolibarr) dans la base de données.
 . Configurer le fichier de configuration de Dolibarr conf.php situé dans le dossier " __conf__ "
 . Se connecter à l'url d'installation de Dolibarr avec les idenfifiants administrateurs
-. Naviguer jusqu'à `Accueil -> Configuration -> Modules` pour activer le module Stormatic
-. Cliquer sur l'icône en forme d'engrenage présent sur le bloc du module Stormatic pour accéder au paramétrage du module
+. Naviguer jusqu'à `Accueil -> Configuration -> Modules` pour activer le module Strmtc
+. Cliquer sur l'icône en forme d'engrenage présent sur le bloc du module Strmtc pour accéder au paramétrage du module
 . Remplir les paramètres par défaut demandés et cliquer sur le bouton *MODIFIER* pour confirmer les modifications.
 
-Le module Stormatic est désormais prêt à l'emploi.
+Le module Strmtc est désormais prêt à l'emploi.
 
 === CONFIGURATION MANUELLE
 En cas de problème survenant au cours de l'utilisation du module, certains paramètres peuvent être vérifiés.
