@@ -1,0 +1,85 @@
+# Copyright (C) 2022 SuperAdmin
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see .
+
+###################
+# GENERIC
+###################
+
+# Module label 'ModuleStormaticName'
+ModuleStormaticName            = STORMATIC
+
+# Module description 'ModuleStormaticDesc'
+ModuleStormaticDesc            = Ce module permet la gestion de produits pièces détachées et abaques (import, export, tarifs, logs)
+
+###################
+# ADMIN PAGE
+###################
+StormaticSetup                 = Configuration du module Importfiles CSV
+Settings                            = Paramètres
+StormaticSetupPage             = Stormatic page de configuration
+DefaultTransportFee                 = Coût du transport par défaut
+DefaultMarginRate                   = Taux de marge par défaut
+DefaultExchangeRate                 = Taux de change par défaut
+STORMATIC_MYPARAM1Tooltip      = Mon paramètre 1 tooltip
+STORMATIC_MYPARAM2Tooltip      = Mon paramètre 2 tooltip
+
+
+###################
+# ABOUT PAGE
+###################
+About                               = Informations
+StormaticAbout                 = A propos du module Stormatic
+StormaticAboutPage             = Stormatic page "A propos"
+
+###################
+# SAMPLE PAGE
+###################
+MyPageName                          = My page name
+
+###################
+# SAMPLE WIDGET
+###################
+MyWidget                            = Mon widget
+MyWidgetDescription                 = description du widget
+
+###################
+# BUTTONS & MENUS 
+###################
+LastImport                          = Dernier Import le
+ImportHistory                       = Historique des Imports
+ImportLogs                          = Logs
+ChooseFileToImport                  = Choisir un fichier CSV à importer
+ExecuteImport                       = Executer l'importation des données
+
+###################
+# FIELDS NAME
+###################
+Label                               = Libellé du fichier
+FileName                            = Nom du fichier
+Height                              = Longueur
+Width                               = Largeur
+TransportFee                        = Coût Transport
+MarginRate                          = Marge
+ExchangeRate                        = Taux de change
+ImportDate                          = Date d'import
+FileSize                            = Taille
+NumberOfProducts                    = Nombre de Produits
+
+###################
+# OTHERS
+###################
+HT-Tag                              = HT
+Action                              = Action
+NoCSVFileFound                      = Aucun fichier n'a été trouvé

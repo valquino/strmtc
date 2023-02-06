@@ -1,0 +1,1576 @@
+<?php
+/* Copyright (C) 2017  Laurent Destailleur <eldy@users.sourceforge.net>
+ * Copyright (C) ---Put here your own copyright and developer email---
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/**
+ * \file        class/csv.class.php
+ * \ingroup     stormatic
+ * \brief       This file is a CRUD class file for Csv (Create/Read/Update/Delete)
+ */
+
+// Put here all includes required by your class file
+require_once DOL_DOCUMENT_ROOT.'/core/class/commonobject.class.php';
+require_once DOL_DOCUMENT_ROOT .'/product/class/product.class.php';
+require_once DOL_DOCUMENT_ROOT.'/comm/propal/class/propal.class.php';
+require_once DOL_DOCUMENT_ROOT.'/commande/class/commande.class.php';
+
+//require_once DOL_DOCUMENT_ROOT . '/societe/class/societe.class.php';
+//require_once DOL_DOCUMENT_ROOT . '/product/class/product.class.php';
+
+/**
+ * Class for Csv
+ */
+class Csv extends CommonObject
+{
+
+	public $array_import_module;
+	public $array_import_perms;
+	public $array_import_icon;
+	public $array_import_code;
+	public $array_import_label;
+	public $array_import_tables;
+	public $array_import_tables_creator;
+	public $array_import_fields;
+	public $array_import_fieldshidden;
+	public $array_import_entities;
+	public $array_import_regex;
+	public $array_import_updatekeys;
+	public $array_import_examplevalues;
+	public $array_import_convertvalue;
+	public $array_import_run_sql_after;
+
+	/**
+	 * @var string Error code (or message)
+	 */
+	public $error = '';
+
+	/**
+	 * @var string[] Error codes (or messages)
+	 */
+	public $errors = array();
+
+	// To store import templates
+	public $hexa; // List of fields in the export profile
+	public $datatoimport;
+	public $model_name; // Name of export profile
+	public $fk_user;
+
+	/**
+	 * @var string ID of module.
+	 */
+	public $module = 'stormatic';
+
+	/**
+	 * @var string ID to identify managed object.
+	 */
+	public $element = 'csv';
+
+	/**
+	 * @var string Name of table without prefix where object is stored. This is also the key used for extrafields management.
+	 */
+	public $table_element = 'stormatic_csv';
+
+	/**
+	 * @var int  Does this object support multicompany module ?
+	 * 0=No test on entity, 1=Test with field entity, 'field@table'=Test with link by field@table
+	 */
+	public $ismultientitymanaged = 0;
+
+	/**
+	 * @var int  Does object support extrafields ? 0=No, 1=Yes
+	 */
+	public $isextrafieldmanaged = 0;
+
+	/**
+	 * @var string String with name of icon for csv. Must be the part after the 'object_' into object_csv.png
+	 */
+	public $picto = 'csv@stormatic';
+
+
+	const STATUS_DRAFT = 0;
+	const STATUS_VALIDATED = 1;
+	const STATUS_CANCELED = 9;
+
+
+	/**
+	 *  'type' field format ('integer', 'integer:ObjectClass:PathToClass[:AddCreateButtonOrNot[:Filter[:Sortfield]]]', 'sellist:TableName:LabelFieldName[:KeyFieldName[:KeyFieldParent[:Filter[:Sortfield]]]]', 'varchar(x)', 'double(24,8)', 'real', 'price', 'text', 'text:none', 'html', 'date', 'datetime', 'timestamp', 'duration', 'mail', 'phone', 'url', 'password')
+	 *         Note: Filter can be a string like "(t.ref:like:'SO-%') or (t.date_creation:<:'20160101') or (t.nature:is:NULL)"
+	 *  'label' the translation key.
+	 *  'picto' is code of a picto to show before value in forms
+	 *  'enabled' is a condition when the field must be managed (Example: 1 or '$conf->global->MY_SETUP_PARAM)
+	 *  'position' is the sort order of field.
+	 *  'notnull' is set to 1 if not null in database. Set to -1 if we must set data to null if empty ('' or 0).
+	 *  'visible' says if field is visible in list (Examples: 0=Not visible, 1=Visible on list and create/update/view forms, 2=Visible on list only, 3=Visible on create/update/view form only (not list), 4=Visible on list and update/view form only (not create). 5=Visible on list and view only (not create/not update). Using a negative value means field is not shown by default on list but can be selected for viewing)
+	 *  'noteditable' says if field is not editable (1 or 0)
+	 *  'default' is a default value for creation (can still be overwrote by the Setup of Default Values if field is editable in creation form). Note: If default is set to '(PROV)' and field is 'ref', the default value will be set to '(PROVid)' where id is rowid when a new record is created.
+	 *  'index' if we want an index in database.
+	 *  'foreignkey'=>'tablename.field' if the field is a foreign key (it is recommanded to name the field fk_...).
+	 *  'searchall' is 1 if we want to search in this field when making a search from the quick search button.
+	 *  'isameasure' must be set to 1 or 2 if field can be used for measure. Field type must be summable like integer or double(24,8). Use 1 in most cases, or 2 if you don't want to see the column total into list (for example for percentage)
+	 *  'css' and 'cssview' and 'csslist' is the CSS style to use on field. 'css' is used in creation and update. 'cssview' is used in view mode. 'csslist' is used for columns in lists. For example: 'css'=>'minwidth300 maxwidth500 widthcentpercentminusx', 'cssview'=>'wordbreak', 'csslist'=>'tdoverflowmax200'
+	 *  'help' is a 'TranslationString' to use to show a tooltip on field. You can also use 'TranslationString:keyfortooltiponlick' for a tooltip on click.
+	 *  'showoncombobox' if value of the field must be visible into the label of the combobox that list record
+	 *  'disabled' is 1 if we want to have the field locked by a 'disabled' attribute. In most cases, this is never set into the definition of $fields into class, but is set dynamically by some part of code.
+	 *  'arrayofkeyval' to set a list of values if type is a list of predefined values. For example: array("0"=>"Draft","1"=>"Active","-1"=>"Cancel"). Note that type can be 'integer' or 'varchar'
+	 *  'autofocusoncreate' to have field having the focus on a create form. Only 1 field should have this property set to 1.
+	 *  'comment' is not used. You can store here any text of your choice. It is not used by application.
+	 *	'validate' is 1 if need to validate with $this->validateField()
+	 *  'copytoclipboard' is 1 or 2 to allow to add a picto to copy value into clipboard (1=picto after label, 2=picto after value)
+	 *
+	 *  Note: To have value dynamic, you can set value to 0 in definition and edit the value on the fly into the constructor.
+	 */
+
+	// BEGIN MODULEBUILDER PROPERTIES
+	/**
+	 * @var array  Array with all fields and their property. Do not use it as a static var. It may be modified by constructor.
+	 */
+	public $fields=array(
+		'rowid' => array('type'=>'integer', 'label'=>'TechnicalID', 'enabled'=>'1', 'position'=>1, 'notnull'=>1, 'visible'=>0, 'noteditable'=>'1', 'index'=>1, 'css'=>'left', 'comment'=>"Id"),
+		'ref' => array('type'=>'varchar(20)', 'label'=>'Ref', 'enabled'=>'1', 'position'=>10, 'notnull'=>1, 'visible'=>-1, 'default'=>'(PROV)', 'index'=>1, 'comment'=>"Reférence du produit"),
+		'price' => array('type'=>'double', 'label'=>'Price', 'enabled'=>'1', 'position'=>40, 'notnull'=>1, 'visible'=>1, 'comment'=>"Prix fournisseur du produit"),
+		'width' => array('type'=>'integer', 'label'=>'Width', 'enabled'=>'1', 'position'=>50, 'notnull'=>1, 'visible'=>1, 'comment'=>"Largeur du produit"),
+		'height' => array('type'=>'integer', 'label'=>'Height', 'enabled'=>'1', 'position'=>50, 'notnull'=>1, 'visible'=>1, 'comment'=>"Longueur du produit"),
+		'filepath' => array('type'=>'varchar(255)', 'label'=>'FilePath', 'enabled'=>'1', 'position'=>50, 'notnull'=>1, 'visible'=>0, 'comment'=>"Fichier CSV associé au produit"),
+		'import_date' => array('type'=>'datetime', 'label'=>'ImportDate', 'enabled'=>'1', 'position'=>500, 'notnull'=>1, 'visible'=>1, 'comment'=>"Date d'import du produit en base de données"),
+		'import_key' => array('type'=>'varchar(14)', 'label'=>'ImportID', 'enabled'=>'1', 'position'=>1000, 'notnull'=>1, 'visible'=>-2, 'comment'=>"ID du jeu d'import"),
+		'fk_product' => array('type'=>'integer:Product:product/class/product.class.php:1:status=1 AND entity IN (__SHARED_ENTITIES__)', 'label'=>'Product', 'enabled'=>'1', 'position'=>30, 'notnull'=>1, 'visible'=>0, 'index'=>1, 'comment'=>"Référence à l'ID du produit de la table product"),
+	);
+	public $rowid;
+	public $ref;
+	public $price;
+	public $width;
+	public $height;
+	public $filepath;
+	public $import_date;
+	public $import_key;
+	public $fk_product;
+	// END MODULEBUILDER PROPERTIES
+
+
+	// If this object has a subtable with lines
+
+	/**
+	 * @var string    Name of subtable line
+	 */
+	public $table_element_line = 'stormatic_csvline';
+
+	/**
+	 * @var string    Field with ID of parent key if this object has a parent
+	 */
+	public $fk_element = 'fk_csv';
+
+	/**
+	 * @var string    Name of subtable class that manage subtable lines
+	 */
+	public $class_element_line = 'Csvline';
+
+	/**
+	 * @var array	List of child tables. To test if we can delete object.
+	 */
+	protected $childtables = array();
+
+	/**
+	 * @var array    List of child tables. To know object to delete on cascade.
+	 *               If name matches '@ClassNAme:FilePathClass;ParentFkFieldName' it will
+	 *               call method deleteByParentField(parentId, ParentFkFieldName) to fetch and delete child object
+	 */
+	protected $childtablesoncascade = array('stormatic_csvdet');
+
+	/**
+	 * @var CsvLine[]     Array of subtable lines
+	 */
+	public $lines = array();
+
+
+
+	/**
+	 * Constructor
+	 *
+	 * @param DoliDb $db Database handler
+	 */
+	public function __construct(DoliDB $db)
+	{
+
+		global $conf, $langs;
+
+		$this->db = $db;
+
+		if (empty($conf->global->MAIN_SHOW_TECHNICAL_ID) && isset($this->fields['rowid'])) {
+			$this->fields['rowid']['visible'] = 0;
+		}
+		if (empty($conf->multicompany->enabled) && isset($this->fields['entity'])) {
+			$this->fields['entity']['enabled'] = 0;
+		}
+
+		// Example to show how to set values of fields definition dynamically
+		/*if ($user->rights->stormatic->csv->read) {
+			$this->fields['myfield']['visible'] = 1;
+			$this->fields['myfield']['noteditable'] = 0;
+		}*/
+
+		// Unset fields that are disabled
+		foreach ($this->fields as $key => $val) {
+			if (isset($val['enabled']) && empty($val['enabled'])) {
+				unset($this->fields[$key]);
+			}
+		}
+
+		// Translate some data of arrayofkeyval
+		if (is_object($langs)) {
+			foreach ($this->fields as $key => $val) {
+				if (!empty($val['arrayofkeyval']) && is_array($val['arrayofkeyval'])) {
+					foreach ($val['arrayofkeyval'] as $key2 => $val2) {
+						$this->fields[$key]['arrayofkeyval'][$key2] = $langs->trans($val2);
+					}
+				}
+			}
+		}
+	}
+
+	// phpcs:disable PEAR.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
+	/**
+	 *  Load description int this->array_import_module, this->array_import_fields, ... of an importable dataset
+	 *
+	 *  @param		User	$user      	Object user making import
+	 *  @param  	string	$filter		Load a particular dataset only. Index will start to 0.
+	 *  @return		int					<0 if KO, >0 if OK
+	 */
+	public function load_arrays($user, $filter = '')
+	{
+		// phpcs:enable
+		global $langs, $conf;
+
+		dol_syslog(get_class($this)."::load_arrays user=".$user->id." filter=".$filter);
+
+		$i = 0;
+
+		require_once DOL_DOCUMENT_ROOT.'/core/lib/functions2.lib.php';
+		$modulesdir = dolGetModulesDirs();
+
+		// Load list of modules
+		foreach ($modulesdir as $dir) {
+			$handle = @opendir(dol_osencode($dir));
+			if (!is_resource($handle)) {
+				continue;
+			}
+
+			// Search module files
+			while (($file = readdir($handle)) !== false) {
+				if (!preg_match("/^(mod.*)\.class\.php/i", $file, $reg)) {
+					continue;
+				}
+
+				$modulename = $reg[1];
+				//$modulename = 'modStormatic';
+
+				// Defined if module is enabled
+				$enabled = true;
+				$part = strtolower(preg_replace('/^mod/i', '', $modulename));
+				// Adds condition for propal module
+				if ($part === 'propale') {
+					$part = 'propal';
+				}
+				if (empty($conf->$part->enabled)) {
+					$enabled = false;
+				}
+
+				if (empty($enabled)) {
+					continue;
+				}
+
+				// Init load class
+				$file = $dir."/".$modulename.".class.php";
+				//$file = DOL_DOCUMENT_ROOT.'/custom/stormatic/core/modules/modStormatic.class.php';
+				$classname = $modulename;
+				require_once $file;
+				$module = new $classname($this->db);
+
+				if (isset($module->import_code) && is_array($module->import_code)) {
+					foreach ($module->import_code as $r => $value) {
+						if ($filter && ($filter != $module->import_code[$r])) {
+							continue;
+						}
+
+						// Test if permissions are ok
+						/*$perm=$module->import_permission[$r][0];
+						//print_r("$perm[0]-$perm[1]-$perm[2]<br>");
+						if ($perm[2])
+						{
+						$bool=$user->rights->{$perm[0]}->{$perm[1]}->{$perm[2]};
+						}
+						else
+						{
+						$bool=$user->rights->{$perm[0]}->{$perm[1]};
+						}
+						if ($perm[0]=='user' && $user->admin) $bool=true;
+						//print $bool." $perm[0]"."<br>";
+						*/
+
+						// Load lang file
+						$langtoload = $module->getLangFilesArray();
+						if (is_array($langtoload)) {
+							foreach ($langtoload as $key) {
+								$langs->load($key);
+							}
+						}
+
+						// Permission
+						$this->array_import_perms[$i] = $user->rights->stormatic->csv->run;
+						// Icon
+						$this->array_import_icon[$i] = (isset($module->import_icon[$r]) ? $module->import_icon[$r] : $module->picto);
+						// Code du dataset export
+						$this->array_import_code[$i] = $module->import_code[$r];
+						// Libelle du dataset export
+						$this->array_import_label[$i] = $module->getImportDatasetLabel($r);
+						// Array of tables to import (key=alias, value=tablename)
+						$this->array_import_tables[$i] = $module->import_tables_array[$r];
+						// Array of tables creator field to import (key=alias, value=creator field name)
+						$this->array_import_tables_creator[$i] = (isset($module->import_tables_creator_array[$r]) ? $module->import_tables_creator_array[$r] : '');
+						// Array of fields to import (key=field, value=label)
+						$this->array_import_fields[$i] = $module->import_fields_array[$r];
+						// Array of hidden fields to import (key=field, value=label)
+						$this->array_import_fieldshidden[$i] = (isset($module->import_fieldshidden_array[$r]) ? $module->import_fieldshidden_array[$r] : '');
+						// Tableau des entites a exporter (cle=champ, valeur=entite)
+						$this->array_import_entities[$i] = $module->import_entities_array[$r];
+						// Tableau des alias a exporter (cle=champ, valeur=alias)
+						$this->array_import_regex[$i] = (isset($module->import_regex_array[$r]) ? $module->import_regex_array[$r] : '');
+						// Array of columns allowed as UPDATE options
+						$this->array_import_updatekeys[$i] = (isset($module->import_updatekeys_array[$r]) ? $module->import_updatekeys_array[$r] : '');
+						// Array of examples
+						$this->array_import_examplevalues[$i] = (isset($module->import_examplevalues_array[$r]) ? $module->import_examplevalues_array[$r] : '');
+						// Tableau des regles de conversion d'une valeur depuis une autre source (cle=champ, valeur=tableau des regles)
+						$this->array_import_convertvalue[$i] = (isset($module->import_convertvalue_array[$r]) ? $module->import_convertvalue_array[$r] : '');
+						// Sql request to run after import
+						$this->array_import_run_sql_after[$i] = (isset($module->import_run_sql_after_array[$r]) ? $module->import_run_sql_after_array[$r] : '');
+						// Module
+						$this->array_import_module[$i] = array('position_of_profile'=>($module->module_position.'-'.$module->import_code[$r]), 'module'=>$module);
+
+						//dol_syslog("Import loaded for module ".$modulename." with index ".$i.", dataset=".$module->import_code[$r].", nb of fields=".count($module->import_fields_array[$r]));
+						$i++;
+					}
+				}
+			}
+			closedir($handle);
+		}
+		return 1;
+	}
+
+	// /**
+	//  * Create object into database
+	//  *
+	//  * @param  User $user      User that creates
+	//  * @param  bool $notrigger false=launch triggers after, true=disable triggers
+	//  * @return int             <0 if KO, Id of created object if OK
+	//  */
+	// public function create(User $user, $notrigger = false)
+	// {
+	// 	$resultcreate = $this->createCommon($user, $notrigger);
+
+	// 	//$resultvalidate = $this->validate($user, $notrigger);
+
+	// 	return $resultcreate;
+	// }
+
+	/**
+	 * Clone an object into another one
+	 *
+	 * @param  	User 	$user      	User that creates
+	 * @param  	int 	$fromid     Id of object to clone
+	 * @return 	mixed 				New object created, <0 if KO
+	 */
+	public function createFromClone(User $user, $fromid)
+	{
+		global $langs, $extrafields;
+		$error = 0;
+
+		dol_syslog(__METHOD__, LOG_DEBUG);
+
+		$object = new self($this->db);
+
+		$this->db->begin();
+
+		// Load source object
+		$result = $object->fetchCommon($fromid);
+		if ($result > 0 && !empty($object->table_element_line)) {
+			$object->fetchLines();
+		}
+
+		// get lines so they will be clone
+		//foreach($this->lines as $line)
+		//	$line->fetch_optionals();
+
+		// Reset some properties
+		unset($object->id);
+		unset($object->fk_user_creat);
+		unset($object->import_key);
+
+		// Clear fields
+		if (property_exists($object, 'ref')) {
+			$object->ref = empty($this->fields['ref']['default']) ? "Copy_Of_".$object->ref : $this->fields['ref']['default'];
+		}
+		if (property_exists($object, 'label')) {
+			$object->label = empty($this->fields['label']['default']) ? $langs->trans("CopyOf")." ".$object->label : $this->fields['label']['default'];
+		}
+		if (property_exists($object, 'status')) {
+			$object->status = self::STATUS_DRAFT;
+		}
+		if (property_exists($object, 'date_creation')) {
+			$object->date_creation = dol_now();
+		}
+		if (property_exists($object, 'date_modification')) {
+			$object->date_modification = null;
+		}
+		// ...
+		// Clear extrafields that are unique
+		if (is_array($object->array_options) && count($object->array_options) > 0) {
+			$extrafields->fetch_name_optionals_label($this->table_element);
+			foreach ($object->array_options as $key => $option) {
+				$shortkey = preg_replace('/options_/', '', $key);
+				if (!empty($extrafields->attributes[$this->table_element]['unique'][$shortkey])) {
+					//var_dump($key); var_dump($clonedObj->array_options[$key]); exit;
+					unset($object->array_options[$key]);
+				}
+			}
+		}
+
+		// Create clone
+		$object->context['createfromclone'] = 'createfromclone';
+		$result = $object->createCommon($user);
+		if ($result < 0) {
+			$error++;
+			$this->error = $object->error;
+			$this->errors = $object->errors;
+		}
+
+		if (!$error) {
+			// copy internal contacts
+			if ($this->copy_linked_contact($object, 'internal') < 0) {
+				$error++;
+			}
+		}
+
+		if (!$error) {
+			// copy external contacts if same company
+			if (!empty($object->socid) && property_exists($this, 'fk_soc') && $this->fk_soc == $object->socid) {
+				if ($this->copy_linked_contact($object, 'external') < 0) {
+					$error++;
+				}
+			}
+		}
+
+		unset($object->context['createfromclone']);
+
+		// End
+		if (!$error) {
+			$this->db->commit();
+			return $object;
+		} else {
+			$this->db->rollback();
+			return -1;
+		}
+	}
+
+	// /**
+	//  * Load object in memory from the database
+	//  *
+	//  * @param int    $id   Id object
+	//  * @param string $ref  Ref
+	//  * @return int         <0 if KO, 0 if not found, >0 if OK
+	//  */
+	// public function fetch($id, $ref = null)
+	// {
+	// 	$result = $this->fetchCommon($id, $ref);
+	// 	if ($result > 0 && !empty($this->table_element_line)) {
+	// 		$this->fetchLines();
+	// 	}
+	// 	return $result;
+	// }
+
+	/**
+	 * Load object lines in memory from the database
+	 *
+	 * @return int         <0 if KO, 0 if not found, >0 if OK
+	 */
+	public function fetchLines()
+	{
+		$this->lines = array();
+
+		$result = $this->fetchLinesCommon();
+		return $result;
+	}
+
+
+	/**
+	 * Load list of objects in memory from the database.
+	 *
+	 * @param  string      $sortorder    Sort Order
+	 * @param  string      $sortfield    Sort field
+	 * @param  int         $limit        limit
+	 * @param  int         $offset       Offset
+	 * @param  array       $filter       Filter array. Example array('field'=>'valueforlike', 'customurl'=>...)
+	 * @param  string      $filtermode   Filter mode (AND or OR)
+	 * @return array|int                 int <0 if KO, array of pages if OK
+	 */
+	public function fetchAll($sortorder = '', $sortfield = '', $limit = 0, $offset = 0, array $filter = array(), $filtermode = 'AND')
+	{
+		global $conf;
+
+		dol_syslog(__METHOD__, LOG_DEBUG);
+
+		$records = array();
+
+		$sql = "SELECT ";
+		$sql .= $this->getFieldList('t');
+		$sql .= " FROM ".MAIN_DB_PREFIX.$this->table_element." as t";
+		if (isset($this->ismultientitymanaged) && $this->ismultientitymanaged == 1) {
+			$sql .= " WHERE t.entity IN (".getEntity($this->element).")";
+		} else {
+			$sql .= " WHERE 1 = 1";
+		}
+		// Manage filter
+		$sqlwhere = array();
+		if (count($filter) > 0) {
+			foreach ($filter as $key => $value) {
+				if ($key == 't.rowid') {
+					$sqlwhere[] = $key." = ".((int) $value);
+				} elseif (in_array($this->fields[$key]['type'], array('date', 'datetime', 'timestamp'))) {
+					$sqlwhere[] = $key." = '".$this->db->idate($value)."'";
+				} elseif ($key == 'customsql') {
+					$sqlwhere[] = $value;
+				} elseif (strpos($value, '%') === false) {
+					$sqlwhere[] = $key." IN (".$this->db->sanitize($this->db->escape($value)).")";
+				} else {
+					$sqlwhere[] = $key." LIKE '%".$this->db->escape($value)."%'";
+				}
+			}
+		}
+		if (count($sqlwhere) > 0) {
+			$sql .= " AND (".implode(" ".$filtermode." ", $sqlwhere).")";
+		}
+
+		if (!empty($sortfield)) {
+			$sql .= $this->db->order($sortfield, $sortorder);
+		}
+		if (!empty($limit)) {
+			$sql .= $this->db->plimit($limit, $offset);
+		}
+
+		$resql = $this->db->query($sql);
+		if ($resql) {
+			$num = $this->db->num_rows($resql);
+			$i = 0;
+			while ($i < ($limit ? min($limit, $num) : $num)) {
+				$obj = $this->db->fetch_object($resql);
+
+				$record = new self($this->db);
+				$record->setVarsFromFetchObj($obj);
+
+				$records[$record->id] = $record;
+
+				$i++;
+			}
+			$this->db->free($resql);
+
+			return $records;
+		} else {
+			$this->errors[] = 'Error '.$this->db->lasterror();
+			dol_syslog(__METHOD__.' '.join(',', $this->errors), LOG_ERR);
+
+			return -1;
+		}
+	}
+
+	// /**
+	//  * Update object into database
+	//  *
+	//  * @param  User $user      User that modifies
+	//  * @param  bool $notrigger false=launch triggers after, true=disable triggers
+	//  * @return int             <0 if KO, >0 if OK
+	//  */
+	// public function update(User $user, $notrigger = false)
+	// {
+	// 	return $this->updateCommon($user, $notrigger);
+	// }
+
+	/**
+	 * Delete object in database
+	 *
+	 * @param User $user       User that deletes
+	 * @param bool $notrigger  false=launch triggers after, true=disable triggers
+	 * @return int             <0 if KO, >0 if OK
+	 */
+	public function delete(User $user, $notrigger = false)
+	{
+		return $this->deleteCommon($user, $notrigger);
+		//return $this->deleteCommon($user, $notrigger, 1);
+	}
+
+	/**
+	 *  Delete a line of object in database
+	 *
+	 *	@param  User	$user       User that delete
+	 *  @param	int		$idline		Id of line to delete
+	 *  @param 	bool 	$notrigger  false=launch triggers after, true=disable triggers
+	 *  @return int         		>0 if OK, <0 if KO
+	 */
+	public function deleteLine(User $user, $idline, $notrigger = false)
+	{
+		if ($this->status < 0) {
+			$this->error = 'ErrorDeleteLineNotAllowedByObjectStatus';
+			return -2;
+		}
+
+		return $this->deleteLineCommon($user, $idline, $notrigger);
+	}
+
+
+	/**
+	 *	Validate object
+	 *
+	 *	@param		User	$user     		User making status change
+	 *  @param		int		$notrigger		1=Does not execute triggers, 0= execute triggers
+	 *	@return  	int						<=0 if OK, 0=Nothing done, >0 if KO
+	 */
+	public function validate($user, $notrigger = 0)
+	{
+		global $conf, $langs;
+
+		require_once DOL_DOCUMENT_ROOT.'/core/lib/files.lib.php';
+
+		$error = 0;
+
+		// Protection
+		if ($this->status == self::STATUS_VALIDATED) {
+			dol_syslog(get_class($this)."::validate action abandonned: already validated", LOG_WARNING);
+			return 0;
+		}
+
+		/*if (! ((empty($conf->global->MAIN_USE_ADVANCED_PERMS) && ! empty($user->rights->stormatic->csv->write))
+		 || (! empty($conf->global->MAIN_USE_ADVANCED_PERMS) && ! empty($user->rights->stormatic->csv->csv_advance->validate))))
+		 {
+		 $this->error='NotEnoughPermissions';
+		 dol_syslog(get_class($this)."::valid ".$this->error, LOG_ERR);
+		 return -1;
+		 }*/
+
+		$now = dol_now();
+
+		$this->db->begin();
+
+		// Define new ref
+		if (!$error && (preg_match('/^[\(]?PROV/i', $this->ref) || empty($this->ref))) { // empty should not happened, but when it occurs, the test save life
+			$num = $this->getNextNumRef();
+		} else {
+			$num = $this->ref;
+		}
+		$this->newref = $num;
+
+		if (!empty($num)) {
+			// Validate
+			$sql = "UPDATE ".MAIN_DB_PREFIX.$this->table_element;
+			$sql .= " SET ref = '".$this->db->escape($num)."',";
+			$sql .= " status = ".self::STATUS_VALIDATED;
+			if (!empty($this->fields['date_validation'])) {
+				$sql .= ", date_validation = '".$this->db->idate($now)."'";
+			}
+			if (!empty($this->fields['fk_user_valid'])) {
+				$sql .= ", fk_user_valid = ".((int) $user->id);
+			}
+			$sql .= " WHERE rowid = ".((int) $this->id);
+
+			dol_syslog(get_class($this)."::validate()", LOG_DEBUG);
+			$resql = $this->db->query($sql);
+			if (!$resql) {
+				dol_print_error($this->db);
+				$this->error = $this->db->lasterror();
+				$error++;
+			}
+
+			if (!$error && !$notrigger) {
+				// Call trigger
+				$result = $this->call_trigger('CSV_VALIDATE', $user);
+				if ($result < 0) {
+					$error++;
+				}
+				// End call triggers
+			}
+		}
+
+		if (!$error) {
+			$this->oldref = $this->ref;
+
+			// Rename directory if dir was a temporary ref
+			if (preg_match('/^[\(]?PROV/i', $this->ref)) {
+				// Now we rename also files into index
+				$sql = 'UPDATE '.MAIN_DB_PREFIX."ecm_files set filename = CONCAT('".$this->db->escape($this->newref)."', SUBSTR(filename, ".(strlen($this->ref) + 1).")), filepath = 'csv/".$this->db->escape($this->newref)."'";
+				$sql .= " WHERE filename LIKE '".$this->db->escape($this->ref)."%' AND filepath = 'csv/".$this->db->escape($this->ref)."' and entity = ".$conf->entity;
+				$resql = $this->db->query($sql);
+				if (!$resql) {
+					$error++; $this->error = $this->db->lasterror();
+				}
+
+				// We rename directory ($this->ref = old ref, $num = new ref) in order not to lose the attachments
+				$oldref = dol_sanitizeFileName($this->ref);
+				$newref = dol_sanitizeFileName($num);
+				$dirsource = $conf->stormatic->dir_output.'/csv/'.$oldref;
+				$dirdest = $conf->stormatic->dir_output.'/csv/'.$newref;
+				if (!$error && file_exists($dirsource)) {
+					dol_syslog(get_class($this)."::validate() rename dir ".$dirsource." into ".$dirdest);
+
+					if (@rename($dirsource, $dirdest)) {
+						dol_syslog("Rename ok");
+						// Rename docs starting with $oldref with $newref
+						$listoffiles = dol_dir_list($conf->stormatic->dir_output.'/csv/'.$newref, 'files', 1, '^'.preg_quote($oldref, '/'));
+						foreach ($listoffiles as $fileentry) {
+							$dirsource = $fileentry['name'];
+							$dirdest = preg_replace('/^'.preg_quote($oldref, '/').'/', $newref, $dirsource);
+							$dirsource = $fileentry['path'].'/'.$dirsource;
+							$dirdest = $fileentry['path'].'/'.$dirdest;
+							@rename($dirsource, $dirdest);
+						}
+					}
+				}
+			}
+		}
+
+		// Set new ref and current status
+		if (!$error) {
+			$this->ref = $num;
+			$this->status = self::STATUS_VALIDATED;
+		}
+
+		if (!$error) {
+			$this->db->commit();
+			return 1;
+		} else {
+			$this->db->rollback();
+			return -1;
+		}
+	}
+
+
+	/**
+	 *	Set draft status
+	 *
+	 *	@param	User	$user			Object user that modify
+	 *  @param	int		$notrigger		1=Does not execute triggers, 0=Execute triggers
+	 *	@return	int						<0 if KO, >0 if OK
+	 */
+	public function setDraft($user, $notrigger = 0)
+	{
+		// Protection
+		if ($this->status <= self::STATUS_DRAFT) {
+			return 0;
+		}
+
+		/*if (! ((empty($conf->global->MAIN_USE_ADVANCED_PERMS) && ! empty($user->rights->stormatic->write))
+		 || (! empty($conf->global->MAIN_USE_ADVANCED_PERMS) && ! empty($user->rights->stormatic->stormaticadvance->validate))))
+		 {
+		 $this->error='Permission denied';
+		 return -1;
+		 }*/
+
+		return $this->setStatusCommon($user, self::STATUS_DRAFT, $notrigger, 'CSV_UNVALIDATE');
+	}
+
+	/**
+	 *	Set cancel status
+	 *
+	 *	@param	User	$user			Object user that modify
+	 *  @param	int		$notrigger		1=Does not execute triggers, 0=Execute triggers
+	 *	@return	int						<0 if KO, 0=Nothing done, >0 if OK
+	 */
+	public function cancel($user, $notrigger = 0)
+	{
+		// Protection
+		if ($this->status != self::STATUS_VALIDATED) {
+			return 0;
+		}
+
+		/*if (! ((empty($conf->global->MAIN_USE_ADVANCED_PERMS) && ! empty($user->rights->stormatic->write))
+		 || (! empty($conf->global->MAIN_USE_ADVANCED_PERMS) && ! empty($user->rights->stormatic->stormaticadvance->validate))))
+		 {
+		 $this->error='Permission denied';
+		 return -1;
+		 }*/
+
+		return $this->setStatusCommon($user, self::STATUS_CANCELED, $notrigger, 'CSV_CANCEL');
+	}
+
+	/**
+	 *	Set back to validated status
+	 *
+	 *	@param	User	$user			Object user that modify
+	 *  @param	int		$notrigger		1=Does not execute triggers, 0=Execute triggers
+	 *	@return	int						<0 if KO, 0=Nothing done, >0 if OK
+	 */
+	public function reopen($user, $notrigger = 0)
+	{
+		// Protection
+		if ($this->status != self::STATUS_CANCELED) {
+			return 0;
+		}
+
+		/*if (! ((empty($conf->global->MAIN_USE_ADVANCED_PERMS) && ! empty($user->rights->stormatic->write))
+		 || (! empty($conf->global->MAIN_USE_ADVANCED_PERMS) && ! empty($user->rights->stormatic->stormaticadvance->validate))))
+		 {
+		 $this->error='Permission denied';
+		 return -1;
+		 }*/
+
+		return $this->setStatusCommon($user, self::STATUS_VALIDATED, $notrigger, 'CSV_REOPEN');
+	}
+
+	/**
+	 *  Return a link to the object card (with optionaly the picto)
+	 *
+	 *  @param  int     $withpicto                  Include picto in link (0=No picto, 1=Include picto into link, 2=Only picto)
+	 *  @param  string  $option                     On what the link point to ('nolink', ...)
+	 *  @param  int     $notooltip                  1=Disable tooltip
+	 *  @param  string  $morecss                    Add more css on link
+	 *  @param  int     $save_lastsearch_value      -1=Auto, 0=No save of lastsearch_values when clicking, 1=Save lastsearch_values whenclicking
+	 *  @return	string                              String with URL
+	 */
+	public function getNomUrl($withpicto = 0, $option = '', $notooltip = 0, $morecss = '', $save_lastsearch_value = -1)
+	{
+		global $conf, $langs, $hookmanager;
+
+		if (!empty($conf->dol_no_mouse_hover)) {
+			$notooltip = 1; // Force disable tooltips
+		}
+
+		$result = '';
+
+		$label = img_picto('', $this->picto).' <u>'.$langs->trans("Csv").'</u>';
+		if (isset($this->status)) {
+			$label .= ' '.$this->getLibStatut(5);
+		}
+		$label .= '<br>';
+		$label .= '<b>'.$langs->trans('Ref').':</b> '.$this->ref;
+
+		$url = dol_buildpath('/stormatic/csv_card.php', 1).'?id='.$this->id;
+
+		if ($option != 'nolink') {
+			// Add param to save lastsearch_values or not
+			$add_save_lastsearch_values = ($save_lastsearch_value == 1 ? 1 : 0);
+			if ($save_lastsearch_value == -1 && preg_match('/list\.php/', $_SERVER["PHP_SELF"])) {
+				$add_save_lastsearch_values = 1;
+			}
+			if ($url && $add_save_lastsearch_values) {
+				$url .= '&save_lastsearch_values=1';
+			}
+		}
+
+		$linkclose = '';
+		if (empty($notooltip)) {
+			if (!empty($conf->global->MAIN_OPTIMIZEFORTEXTBROWSER)) {
+				$label = $langs->trans("ShowCsv");
+				$linkclose .= ' alt="'.dol_escape_htmltag($label, 1).'"';
+			}
+			$linkclose .= ' title="'.dol_escape_htmltag($label, 1).'"';
+			$linkclose .= ' class="classfortooltip'.($morecss ? ' '.$morecss : '').'"';
+		} else {
+			$linkclose = ($morecss ? ' class="'.$morecss.'"' : '');
+		}
+
+		if ($option == 'nolink' || empty($url)) {
+			$linkstart = '<span';
+		} else {
+			$linkstart = '<a href="'.$url.'"';
+		}
+		$linkstart .= $linkclose.'>';
+		if ($option == 'nolink' || empty($url)) {
+			$linkend = '</span>';
+		} else {
+			$linkend = '</a>';
+		}
+
+		$result .= $linkstart;
+
+		if (empty($this->showphoto_on_popup)) {
+			if ($withpicto) {
+				$result .= img_object(($notooltip ? '' : $label), ($this->picto ? $this->picto : 'generic'), ($notooltip ? (($withpicto != 2) ? 'class="paddingright"' : '') : 'class="'.(($withpicto != 2) ? 'paddingright ' : '').'classfortooltip"'), 0, 0, $notooltip ? 0 : 1);
+			}
+		} else {
+			if ($withpicto) {
+				require_once DOL_DOCUMENT_ROOT.'/core/lib/files.lib.php';
+
+				list($class, $module) = explode('@', $this->picto);
+				$upload_dir = $conf->$module->multidir_output[$conf->entity]."/$class/".dol_sanitizeFileName($this->ref);
+				$filearray = dol_dir_list($upload_dir, "files");
+				$filename = $filearray[0]['name'];
+				if (!empty($filename)) {
+					$pospoint = strpos($filearray[0]['name'], '.');
+
+					$pathtophoto = $class.'/'.$this->ref.'/thumbs/'.substr($filename, 0, $pospoint).'_mini'.substr($filename, $pospoint);
+					if (empty($conf->global->{strtoupper($module.'_'.$class).'_FORMATLISTPHOTOSASUSERS'})) {
+						$result .= '<div class="floatleft inline-block valignmiddle divphotoref"><div class="photoref"><img class="photo'.$module.'" alt="No photo" border="0" src="'.DOL_URL_ROOT.'/viewimage.php?modulepart='.$module.'&entity='.$conf->entity.'&file='.urlencode($pathtophoto).'"></div></div>';
+					} else {
+						$result .= '<div class="floatleft inline-block valignmiddle divphotoref"><img class="photouserphoto userphoto" alt="No photo" border="0" src="'.DOL_URL_ROOT.'/viewimage.php?modulepart='.$module.'&entity='.$conf->entity.'&file='.urlencode($pathtophoto).'"></div>';
+					}
+
+					$result .= '</div>';
+				} else {
+					$result .= img_object(($notooltip ? '' : $label), ($this->picto ? $this->picto : 'generic'), ($notooltip ? (($withpicto != 2) ? 'class="paddingright"' : '') : 'class="'.(($withpicto != 2) ? 'paddingright ' : '').'classfortooltip"'), 0, 0, $notooltip ? 0 : 1);
+				}
+			}
+		}
+
+		if ($withpicto != 2) {
+			$result .= $this->ref;
+		}
+
+		$result .= $linkend;
+		//if ($withpicto != 2) $result.=(($addlabel && $this->label) ? $sep . dol_trunc($this->label, ($addlabel > 1 ? $addlabel : 0)) : '');
+
+		global $action, $hookmanager;
+		$hookmanager->initHooks(array('csvdao'));
+		$parameters = array('id'=>$this->id, 'getnomurl'=>$result);
+		$reshook = $hookmanager->executeHooks('getNomUrl', $parameters, $this, $action); // Note that $action and $object may have been modified by some hooks
+		if ($reshook > 0) {
+			$result = $hookmanager->resPrint;
+		} else {
+			$result .= $hookmanager->resPrint;
+		}
+
+		return $result;
+	}
+
+	/**
+	 *  Return the label of the status
+	 *
+	 *  @param  int		$mode          0=long label, 1=short label, 2=Picto + short label, 3=Picto, 4=Picto + long label, 5=Short label + Picto, 6=Long label + Picto
+	 *  @return	string 			       Label of status
+	 */
+	public function getLabelStatus($mode = 0)
+	{
+		return $this->LibStatut($this->status, $mode);
+	}
+
+	/**
+	 *  Return the label of the status
+	 *
+	 *  @param  int		$mode          0=long label, 1=short label, 2=Picto + short label, 3=Picto, 4=Picto + long label, 5=Short label + Picto, 6=Long label + Picto
+	 *  @return	string 			       Label of status
+	 */
+	public function getLibStatut($mode = 0)
+	{
+		return $this->LibStatut($this->status, $mode);
+	}
+
+	// phpcs:disable PEAR.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
+	/**
+	 *  Return the status
+	 *
+	 *  @param	int		$status        Id status
+	 *  @param  int		$mode          0=long label, 1=short label, 2=Picto + short label, 3=Picto, 4=Picto + long label, 5=Short label + Picto, 6=Long label + Picto
+	 *  @return string 			       Label of status
+	 */
+	public function LibStatut($status, $mode = 0)
+	{
+		// phpcs:enable
+		if (empty($this->labelStatus) || empty($this->labelStatusShort)) {
+			global $langs;
+			//$langs->load("stormatic@stormatic");
+			$this->labelStatus[self::STATUS_DRAFT] = $langs->transnoentitiesnoconv('Draft');
+			$this->labelStatus[self::STATUS_VALIDATED] = $langs->transnoentitiesnoconv('Enabled');
+			$this->labelStatus[self::STATUS_CANCELED] = $langs->transnoentitiesnoconv('Disabled');
+			$this->labelStatusShort[self::STATUS_DRAFT] = $langs->transnoentitiesnoconv('Draft');
+			$this->labelStatusShort[self::STATUS_VALIDATED] = $langs->transnoentitiesnoconv('Enabled');
+			$this->labelStatusShort[self::STATUS_CANCELED] = $langs->transnoentitiesnoconv('Disabled');
+		}
+
+		$statusType = 'status'.$status;
+		//if ($status == self::STATUS_VALIDATED) $statusType = 'status1';
+		if ($status == self::STATUS_CANCELED) {
+			$statusType = 'status6';
+		}
+
+		return dolGetStatus($this->labelStatus[$status], $this->labelStatusShort[$status], '', $statusType, $mode);
+	}
+
+	/**
+	 *	Load the info information in the object
+	 *
+	 *	@param  int		$id       Id of object
+	 *	@return	void
+	 */
+	public function info($id)
+	{
+		$sql = "SELECT rowid, date_creation as datec, tms as datem,";
+		$sql .= " fk_user_creat, fk_user_modif";
+		$sql .= " FROM ".MAIN_DB_PREFIX.$this->table_element." as t";
+		$sql .= " WHERE t.rowid = ".((int) $id);
+
+		$result = $this->db->query($sql);
+		if ($result) {
+			if ($this->db->num_rows($result)) {
+				$obj = $this->db->fetch_object($result);
+				$this->id = $obj->rowid;
+				if (!empty($obj->fk_user_author)) {
+					$cuser = new User($this->db);
+					$cuser->fetch($obj->fk_user_author);
+					$this->user_creation = $cuser;
+				}
+
+				if (!empty($obj->fk_user_valid)) {
+					$vuser = new User($this->db);
+					$vuser->fetch($obj->fk_user_valid);
+					$this->user_validation = $vuser;
+				}
+
+				if (!empty($obj->fk_user_cloture)) {
+					$cluser = new User($this->db);
+					$cluser->fetch($obj->fk_user_cloture);
+					$this->user_cloture = $cluser;
+				}
+
+				$this->date_creation     = $this->db->jdate($obj->datec);
+				$this->date_modification = $this->db->jdate($obj->datem);
+				$this->date_validation   = $this->db->jdate($obj->datev);
+			}
+
+			$this->db->free($result);
+		} else {
+			dol_print_error($this->db);
+		}
+	}
+
+	/**
+	 * Initialise object with example values
+	 * Id must be 0 if object instance is a specimen
+	 *
+	 * @return void
+	 */
+	public function initAsSpecimen()
+	{
+		// Set here init that are not commonf fields
+		// $this->property1 = ...
+		// $this->property2 = ...
+
+		$this->initAsSpecimenCommon();
+	}
+
+	/**
+	 * 	Create an array of lines
+	 *
+	 * 	@return array|int		array of lines if OK, <0 if KO
+	 */
+	public function getLinesArray()
+	{
+		$this->lines = array();
+
+		$objectline = new CsvLine($this->db);
+		$result = $objectline->fetchAll('ASC', 'position', 0, 0, array('customsql'=>'fk_csv = '.((int) $this->id)));
+
+		if (is_numeric($result)) {
+			$this->error = $objectline->error;
+			$this->errors = $objectline->errors;
+			return $result;
+		} else {
+			$this->lines = $result;
+			return $this->lines;
+		}
+	}
+
+	/**
+	 *  Returns the reference to the following non used object depending on the active numbering module.
+	 *
+	 *  @return string      		Object free reference
+	 */
+	public function getNextNumRef()
+	{
+		global $langs, $conf;
+		$langs->load("stormatic@stormatic");
+
+		if (empty($conf->global->IMPORTFILESCSV_CSV_ADDON)) {
+			$conf->global->IMPORTFILESCSV_CSV_ADDON = 'mod_csv_standard';
+		}
+
+		if (!empty($conf->global->IMPORTFILESCSV_CSV_ADDON)) {
+			$mybool = false;
+
+			$file = $conf->global->IMPORTFILESCSV_CSV_ADDON.".php";
+			$classname = $conf->global->IMPORTFILESCSV_CSV_ADDON;
+
+			// Include file with class
+			$dirmodels = array_merge(array('/'), (array) $conf->modules_parts['models']);
+			foreach ($dirmodels as $reldir) {
+				$dir = dol_buildpath($reldir."core/modules/stormatic/");
+
+				// Load file with numbering class (if found)
+				$mybool |= @include_once $dir.$file;
+			}
+
+			if ($mybool === false) {
+				dol_print_error('', "Failed to include file ".$file);
+				return '';
+			}
+
+			if (class_exists($classname)) {
+				$obj = new $classname();
+				$numref = $obj->getNextValue($this);
+
+				if ($numref != '' && $numref != '-1') {
+					return $numref;
+				} else {
+					$this->error = $obj->error;
+					//dol_print_error($this->db,get_class($this)."::getNextNumRef ".$obj->error);
+					return "";
+				}
+			} else {
+				print $langs->trans("Error")." ".$langs->trans("ClassNotFound").' '.$classname;
+				return "";
+			}
+		} else {
+			print $langs->trans("ErrorNumberingModuleNotSetup", $this->element);
+			return "";
+		}
+	}
+
+	/**
+	 *  Create a document onto disk according to template module.
+	 *
+	 *  @param	    string		$modele			Force template to use ('' to not force)
+	 *  @param		Translate	$outputlangs	objet lang a utiliser pour traduction
+	 *  @param      int			$hidedetails    Hide details of lines
+	 *  @param      int			$hidedesc       Hide description
+	 *  @param      int			$hideref        Hide ref
+	 *  @param      null|array  $moreparams     Array to provide more information
+	 *  @return     int         				0 if KO, 1 if OK
+	 */
+	public function generateDocument($modele, $outputlangs, $hidedetails = 0, $hidedesc = 0, $hideref = 0, $moreparams = null)
+	{
+		global $conf, $langs;
+
+		$result = 0;
+		$includedocgeneration = 1;
+
+		$langs->load("stormatic@stormatic");
+
+		if (!dol_strlen($modele)) {
+			$modele = 'standard_csv';
+
+			if (!empty($this->model_pdf)) {
+				$modele = $this->model_pdf;
+			} elseif (!empty($conf->global->CSV_ADDON_PDF)) {
+				$modele = $conf->global->CSV_ADDON_PDF;
+			}
+		}
+
+		$modelpath = "core/modules/stormatic/doc/";
+
+		if ($includedocgeneration && !empty($modele)) {
+			$result = $this->commonGenerateDocument($modelpath, $modele, $outputlangs, $hidedetails, $hidedesc, $hideref, $moreparams);
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Action executed by scheduler
+	 * CAN BE A CRON TASK. In such a case, parameters come from the schedule job setup field 'Parameters'
+	 * Use public function doScheduledJob($param1, $param2, ...) to get parameters
+	 *
+	 * @return	int			0 if OK, <>0 if KO (this function is used also by cron so only 0 is OK)
+	 */
+	public function doScheduledJob()
+	{
+		global $conf, $langs;
+
+		//$conf->global->SYSLOG_FILE = 'DOL_DATA_ROOT/dolibarr_mydedicatedlofile.log';
+
+		$error = 0;
+		$this->output = '';
+		$this->error = '';
+
+		dol_syslog(__METHOD__, LOG_DEBUG);
+
+		$now = dol_now();
+
+		$this->db->begin();
+
+		// ...
+
+		$this->db->commit();
+
+		return $error;
+	}
+
+	/**
+	 * Price of spare parts (pièces détachées)
+	 * Get the according the the customer type.
+	 * Customer can be : individuals, business or local communities.
+	 */
+	public function customSetCompanyLevelPrice($company) {
+		global $user;
+
+		// typent_code return the customer type code.
+		// print '<pre>'.var_export($company->typent_code,true).'</pre>'; die;
+
+		// Let's associate each customer type by its price level
+		// Please note : 	price level 1 = particulier; 
+		//					price level 2 = Pro; 
+		//					price level 3 = Collectivité
+		$customer_type = array(
+			'TE_PRIVATE' 	=> 1,	// Individuals/Particulier
+			'TE_OTHER'		=> 1,	// Default : Individuals/Particulier
+			'TE_STARTUP' 	=> 2, 	// Start-up (Business/Pro)
+			'TE_SMALL' 		=> 2, 	// TPE (Business/Pro)
+			'TE_MEDIUM'		=> 2, 	// PME/PMI (Business/Pro)
+			'TE_WHOLE'	 	=> 2, 	// Grossiste (Business/Pro)
+			'TE_ADMIN'	 	=> 3,	// Administration (Local communities/Collectivité)
+		);
+
+		// Define the price level according to the customer type
+		if (array_key_exists($company->typent_code, $customer_type)) {
+			$price_level = $customer_type[$company->typent_code];
+		} else {
+			$price_level = 1; // Default value if customer type is not detected (individuals);
+		}
+
+		return $company->setPriceLevel($price_level, $user);
+	}
+
+	/**
+	 * Check if a product already exists
+	 */
+	public function customCheckProduct($product_abaque) {
+
+		$sql = "SELECT p.rowid, p.ref";
+		$sql .= " FROM ".MAIN_DB_PREFIX."product as p";
+		$sql .= " WHERE p.ref = ".$product_abaque['ref'];
+		$resql = $this->db->query($sql);
+
+		// The product exists
+		if($this->db->num_rows($resql) > 0) {
+			// Check if the abaque details exist too
+			$abaque_details = $this->customCheckAbaqueDetails($product_abaque);
+			if ($abaque_details) {
+				$resql = "product_abaque_exist";
+			} else {
+				$resql = $this->db->fetch_object($resql);
+			}
+		} else {
+			$resql = false;
+		}
+
+		return $resql;
+	}
+
+	/**
+	 * Check if abaque details from a product exist
+	 */
+	public function customCheckAbaqueDetails($product_abaque) {
+
+		$sql 	= "SELECT rowid";
+		$sql 	.= " FROM ".MAIN_DB_PREFIX.$this->table_element;
+		$sql 	.= " WHERE ref = ".$product_abaque['ref'];
+		$sql 	.= " AND price = ".$product_abaque['price'];
+		$sql 	.= " AND width = ".$product_abaque['width'];
+		$sql 	.= " AND height = ".$product_abaque['height'];
+		$resql 	= $this->db->query($sql);
+
+		// Abaque details exists
+		if($this->db->num_rows($resql) > 0) {
+			$resql = true;
+		} else {
+			$resql = false;
+		}
+
+		return $resql;
+	}
+
+	/**
+	 * Insert abaque informations for a product
+	 * Only inserted when the product is already created in the db
+	 */
+	public function customInsertAbaques($abaques) {
+		$sql = "INSERT INTO ".MAIN_DB_PREFIX.$this->table_element;
+		$sql .= " (ref, price, width, height, fk_product, filepath, import_date, import_key)";
+		$sql .= " VALUES ".$abaques;
+		$resql = $this->db->query($sql);
+
+		if($resql){
+			print 'Données insérées avec succès';
+		} else {
+			// Error
+			dol_print_error($this->db);
+		}
+
+		$this->db->free($resql);
+	}
+
+	/**
+	 * For security reaons, set the default price for an abaque product 
+	 * default price = average price of all sizes
+	 */
+	public function customAbaqueDefaultPrice($currents_ref_price) {
+		global $user;
+
+		foreach($currents_ref_price as $product) {
+			$sql 	= "SELECT AVG(price) AS avg_price";
+			$sql	.= " FROM ".MAIN_DB_PREFIX.$this->table_element;
+			$sql	.= " WHERE ref =". $product['ref'];
+			$sql	.= " GROUP BY ref";
+			$resql 	= $this->db->query($sql);
+			$result = $this->db->fetch_object($resql);
+
+			if($result) {
+				$medium_price = $result->avg_price;
+			} else {
+				// No product found in the db, so it's a new product.
+				// The default price is the current price.
+				$medium_price = $product['price'];
+			}
+
+			// Update the product with its default price 
+			$objectProduct 		= new Product($this->db);
+			$objectProduct->id 	= $product['id'];
+			$objectProduct->updatePrice($medium_price, 'HT', $user);
+		}
+
+		$this->db->free($resql);
+		return $medium_price;
+	}
+
+	/**
+	 * Hide Extrafields on a propal/order/invoice
+	 * Les produits pièces détachées n'ont pas besoin d'afficher une liste
+	 * de la taille de leurs produits car ils sont vendus avec une taille unique
+	 */
+	public function customHideExtrafields($id, $current_context) {
+		global $db;
+		global $categorie;
+		global $authorized_context;
+
+		// Query each line of products before searching its category
+		$sql                = "SELECT tdet.rowid, tdet.fk_product";
+		$sql				.= " FROM ".MAIN_DB_PREFIX.$authorized_context[$current_context]['tabledet']." AS tdet";
+		$sql				.= " LEFT JOIN ".MAIN_DB_PREFIX.$authorized_context[$current_context]['table']." AS t ON tdet.fk_".$authorized_context[$current_context]['table']." = t.rowid";
+		$sql				.= " LEFT JOIN ".MAIN_DB_PREFIX."categorie_product AS cp ON tdet.fk_product = cp.fk_product";
+		$sql				.= " LEFT JOIN ".MAIN_DB_PREFIX."categorie AS cat ON cp.fk_categorie = cat.rowid";
+		$sql				.= " LEFT JOIN ".MAIN_DB_PREFIX."categories_extrafields AS catext ON cat.rowid = catext.fk_object";
+		$sql                .= " WHERE t.rowid = $id";
+		$resql              = $db->query($sql);
+		$num_rows           = $db->num_rows($resql);
+		$i                  = 0;
+
+		while($i < $num_rows) {
+			$result                     = $db->fetch_object($resql);
+			// We check categories of the the current
+			$categories_array_labels    = $categorie->containing($result->fk_product, 'product', 'label');
+			$is_abaque_category         = in_array('Produits Abaques', $categories_array_labels);
+
+			if(!$is_abaque_category) {
+				// if not in Abaque category, we store each object line in an array
+				$rows[] = $result->rowid;
+			}
+			$i++;
+		}
+		
+		// json_encode for javascript use
+		// Later, extrafields for Abaque products will be hidden.
+		return json_encode($rows);
+	}
+
+	/**
+	 * Calcul the selling price of a product
+	 */
+	public function customCommerceUpdate($current_context, $authorized_context, $product = NULL, $line_id = NULL, $abaque_id = NULL) {
+		global $db;
+		global $conf;
+	
+		// Get prices for each line of products
+		$sql                 = "SELECT t.price, t.fk_product, cat.label,";
+		$sql 				.= " catext.prixtransport AS transportFee,";
+		$sql 				.= " catext.marge AS marginRate, "; 
+		$sql 				.= " catext.tauxchange AS exchangeRate";
+		$sql                .= " FROM ".MAIN_DB_PREFIX.$this->table_element." AS t";
+		$sql				.= " LEFT JOIN ".MAIN_DB_PREFIX."categorie_product AS cp ON t.fk_product = cp.fk_product";
+		$sql				.= " LEFT JOIN ".MAIN_DB_PREFIX."categorie AS cat ON cp.fk_categorie = cat.rowid";
+		$sql				.= " LEFT JOIN ".MAIN_DB_PREFIX."categories_extrafields AS catext ON cat.rowid = catext.fk_object";
+
+		// Update a price line when triggered
+		if($product) {
+			$sql			.= " LEFT JOIN ".MAIN_DB_PREFIX.$authorized_context[$current_context]['table']."_extrafields AS ta ON t.rowid = ta.abaquesize";
+			$sql			.= " WHERE t.ref = $product->product_ref";
+			$sql			.= " AND ta.fk_object = $product->rowid";
+			$sql			.= " AND cp.fk_product = $product->fk_product";
+
+		// Update a price line in live with Ajax
+		} else { 
+			$sql			.= " LEFT JOIN ".MAIN_DB_PREFIX.$authorized_context[$current_context]['tabledet']." AS tdet ON t.fk_product = tdet.fk_product";
+			$sql       		.= " WHERE t.rowid = $abaque_id";
+			$sql         	.= " AND tdet.rowid = $line_id";
+		}
+		$sql				.= " AND cat.label != 'Produits Abaques'"; // We don't need the parent category in the result
+		$resql              = $db->query($sql);
+	
+		if($resql) {
+			$result_price               = $db->fetch_object($resql);
+			// Prices and rates from the product category otherwise the default prices are used
+			$transport_fee              = $result_price->transportFee ? $result_price->transportFee : $conf->global->DefaultTransportFee;
+			$margin_rate                = $result_price->marginRate ? $result_price->marginRate : $conf->global->DefaultMarginRate;
+			$exchange_rate              = $result_price->exchangeRate ? $result_price->exchangeRate : $conf->global->DefaultExchangeRate;
+			$calculated_price           = $result_price->price + $transport_fee + ($result_price->price * $margin_rate/100) + ($result_price->price * $exchange_rate/100);
+	
+			return $calculated_price;
+		} else {
+			return dol_print_error($db);
+		}
+	}
+
+	/**
+	 * Update a line product with its selling price
+	 */
+	public function customAbaqueLineUpdate($current_action, $product) {
+		global $conf;
+
+		$authorized_context  = array(
+			'LINEPROPAL_UPDATE' => ['table' => 'propaldet'], 
+			'LINEORDER_UPDATE' 	=> ['table' => 'commandedet'], 
+			'LINEBILL_UPDATE' 	=> ['table' => 'facturedet'],
+		);
+
+		$calculated_price 	= $this->customCommerceUpdate($current_action, $authorized_context, $product);
+		$product->tva_tx 	= $conf->global->MAIN_VAT_DEFAULT_IF_AUTODETECT_FAILS;
+
+		// Update price in propal
+		if($current_action == "LINEPROPAL_UPDATE") {
+			$propal_line 	= new Propal($this->db);
+			$result 		= $propal_line->updateline(
+				$product->rowid,
+				$calculated_price,
+				$product->qty,
+				$product->remise_percent,
+				$product->tva_tx
+			);
+			
+		// Update price in order
+		} elseif ($current_action == "LINEORDER_UPDATE") {
+			$commande_line 	= new Commande($this->db);
+			$result 		= $commande_line->updateline(
+				$product->rowid,
+				$product->desc,
+				$calculated_price,
+				$product->qty,
+				$product->remise_percent,
+				$product->tva_tx
+			);
+
+		// Update price in invoice
+		} elseif ($current_action == "LINEBILL_UPDATE") {
+			$facture_line 	= new Facture($this->db);
+			$result 		= $facture_line->updateline(
+				$product->rowid,
+				$product->desc,
+				$calculated_price,
+				$product->qty,
+				$product->remise_percent,
+				$product->date_start,
+				$product->date_end,
+				$product->tva_tx
+			);
+		} else {
+			// Do nothing
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Delete a product
+	 */
+	public function customDeleteAbaques($product) {
+		$sql = "DELETE FROM ".MAIN_DB_PREFIX.$this->table_element;
+		$sql .= " WHERE fk_product = $product->id"; 
+		$resql = $this->db->query($sql);
+
+		$this->customAbaqueLogs($sql);
+
+		return $resql;
+	}
+
+	/**
+	 * Logs for abaque products
+	 * A special log file was created for the custom module
+	 * This log file is stored in the directory module
+	 */
+	public function customAbaqueLogs($content, $level = 1, $type = '') {
+		require_once DOL_DOCUMENT_ROOT.'/user/class/user.class.php';
+		$user = new User($db);
+
+		switch($level) {
+			case 1:
+				$level = ' DEBUG ';
+				break;
+			case 2:
+				$level = ' INFO ';
+				break;
+			case 3:
+				$level = ' WARNING ';
+				break;
+			case 2:
+				$level = ' ERROR ';
+				break;
+			default:
+				$level = ' UNKNOWN';
+		}
+
+		switch($type) {
+			case 1:
+				$type = ' sql';
+				break;
+			default:
+				$type = ' ';
+		}
+
+		$content = "\n".dol_now()."\t".$level."\t".$_SERVER['SERVER_ADDR']."\t".$user->login."\t".$type."=".$content;
+		$log_path = DOL_DOCUMENT_ROOT.'/custom/'.$this->module.'/'.$this->module.'.log';
+		$log_file = fopen($log_path, 'c+b');
+		fseek($log_file, dol_filesize($log_path));
+		fwrite($log_file, $content);
+	}
+}
+
+
+require_once DOL_DOCUMENT_ROOT.'/core/class/commonobjectline.class.php';
+
+/**
+ * Class CsvLine. You can also remove this and generate a CRUD class for lines objects.
+ */
+class CsvLine extends CommonObjectLine
+{
+	// To complete with content of an object CsvLine
+	// We should have a field rowid, fk_csv and position
+
+	/**
+	 * @var int  Does object support extrafields ? 0=No, 1=Yes
+	 */
+	public $isextrafieldmanaged = 0;
+
+	/**
+	 * Constructor
+	 *
+	 * @param DoliDb $db Database handler
+	 */
+	public function __construct(DoliDB $db)
+	{
+		$this->db = $db;
+	}
+}
