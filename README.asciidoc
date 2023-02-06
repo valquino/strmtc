@@ -1,0 +1,147 @@
+= STORMATIC | HOW TO =
+:subtitle: DOCUMENTATION STORMATIC
+:companyname: MAC2
+:corpname: MAC2
+:orgname: MAC2
+:creator: Valentino Quinola
+:title: Documentation du module Stormatic
+:subject: Ce document est une documentation du module Stormatic.
+:keywords: Stormatic
+// Date du document :
+:docdate: 2023-02-03
+:toc: manual
+:toc-placement: preamble
+
+<<<
+
+== DOCUMENTATION DU MODULE STORMATIC
+
+Ce document est une documentation du module Stormatic situé dans le répertoire `custom/stormatic`.
+Il a pour objectif de simplifier l'utilisation et l'installation du module pour les équipes de Stormatic.
+
+
+*Version actuelle du document*
+
+[options="header",format="csv"]
+|===
+Author/Développeur, Entreprise, Client, Date, Version
+Valentino Quinola, MAC2, Stormatic, 2023-02-03, Version 1.0
+|===
+
+*Note*
+[NOTE]
+==============
+__ Le module Stormatic est spécifique aux besoins de l'entreprise Stormatic. __ 
+__ Il ne peut-être utilisé que dans ce cadre dans l'état actuel où il a été développé. __
+==============
+
+
+---
+== INTRODUCTION
+__Ce module permet de : __ 
+
+* [x] Importer un produit abaque depuis un fichier CSV.
+* [x] Calculer le prix de vente d'un produit abaque suivant la règle de calcul suivante : +
+* [x] Prix de vente produit = prix fournisseur + coût transport + marge + taux de change*
+* [x] Sélectionner les dimensions des produits abaque et recalculer le total lors de la création ou l'édition des propales, commandes et factures dans l'interface de Dolibarr
+* [x] Afficher les dimensions des produits abaques sur les documents Dolibarr : Propales, commandes, factures. +
+
+
+---
+== SPECIFICATIONS TECHNIQUES
+__Ce module a été crée et testé sous Dolibarr 15. Il devrait être compatibles à tous versions de Dolibarr ≥ 15__
+
+
+---
+== INSTALLATION
+
+=== NOUVELLE INSTALLATION ET CONFIGURATION AUTOMATIQUE
+Grâce à l'import d'un fichier SQL, le module Stormatic est pré-configuré. Aucune configuration manuelle n'est à faire. +
+Voici les différentes étapes de l'installation : + 
+
+. Importer le fichier stormatic.sql (situé à la racine de Dolibarr) dans la base de données.
+. Configurer le fichier de configuration de Dolibarr conf.php situé dans le dossier " __conf__ "
+. Se connecter à l'url d'installation de Dolibarr avec les idenfifiants administrateurs
+. Naviguer jusqu'à `Accueil -> Configuration -> Modules` pour activer le module Stormatic
+. Cliquer sur l'icône en forme d'engrenage présent sur le bloc du module Stormatic pour accéder au paramétrage du module
+. Remplir les paramètres par défaut demandés et cliquer sur le bouton *MODIFIER* pour confirmer les modifications.
+
+Le module Stormatic est désormais prêt à l'emploi.
+
+=== CONFIGURATION MANUELLE
+En cas de problème survenant au cours de l'utilisation du module, certains paramètres peuvent être vérifiés.
+
+=== Propales, commandes et factures (interface et documents générés)
+Les propales, commandes et factures font automatiquement appels aux extrafields néccéssaires à l'affichage des dimensions des produits abaques.
+
+*Pour les propales*, se rendre dans la configuration du module `Propositions Commerciales` puis `Attributs supplémentaires (lignes)`. La configuration doit être la suivante :
+
+[%collapsible]
+====
+- Libellé ou clé de traduction : Size
+- Code de l'attribut : abaquesize
+- Type : Liste issue d'une table
+- Valeur : stormatic_csv:CONCAT(height,' x ',width):rowid::fk_product=($SEL$ fk_product FROM llx_propaldet WHERE rowid=$ID$)
+- Position : 1
+- Requis : Oui
+- Peut toujours être édité : Oui
+- Visibilité : 4
+- Afficher sur le PDF : 1
+- Texte d'aide à afficher dans l'info-bulle : Dimesion du produit au format : Longueur x Largeur
+====
+
+*Pour les commandes*, se rendre dans la configuration du module `Commandes` puis `Attributs supplémentaires (lignes)`. La configuration doit être la suivante :
+
+[%collapsible]
+====
+- Libellé ou clé de traduction : Size
+- Code de l'attribut : abaquesize
+- Type : Liste issue d'une table
+- Valeur : stormatic_csv:CONCAT(height,' x ',width):rowid::fk_product=($SEL$ fk_product FROM llx_commandedet WHERE rowid=$ID$)
+- Position : 1
+- Requis : Non
+- Peut toujours être édité : Oui
+- Visibilité : 4
+- Afficher sur le PDF : 1
+- Texte d'aide à afficher dans l'info-bulle : Dimesion du produit au format : Longueur x Largeur
+====
+
+*Pour les factures*, se rendre dans la configuration du module `Factures et Avoirs` puis `Attributs supplémentaires (lignes)`. La configuration doit être la suivante :
+
+[%collapsible]
+====
+- Libellé ou clé de traduction : Size
+- Code de l'attribut : abaquesize
+- Type : Liste issue d'une table
+- Valeur : stormatic_csv:CONCAT(height,' x ',width):rowid::fk_product=($SEL$ fk_product FROM llx_facturedet WHERE rowid=$ID$)
+- Position : 1
+- Requis : Non
+- Peut toujours être édité : Oui
+- Visibilité : 4
+- Afficher sur le PDF : 1
+- Texte d'aide à afficher dans l'info-bulle : Dimesion du produit au format : Longueur x Largeur
+
+Insérer la même configuration dans l'onglet `Attributs supplémentaires (ligne de factures modèles)`
+====
+
+=== TVA par défaut
+Le taux de TVA par défaut est configurable depuis l'interface de Dolibarr Accueil -> Configuration -> Divers puis ajouter le paramètre *MAIN_VAT_DEFAULT_IF_AUTODETECT_FAILS* avec une valeur correspondant au taux voulu sans le signe du %
+
+=== Affichage et sélection des dimensions des produits abaques lors de l'édition de propales, commandes et factures depuis l'interface de Dolibarr
+Un champs de sélection des dimensions des produits abaques s'affichent uniquement si le produit abaque est classé dans une catégorie de produits nommée Produits Abaques et une sous-catégorie nommée avec n'importe quel.
+Il est recommandé de créer une catégorie Pièces détachées afin de différencier clairement les produits abaques aux produits pièces détachées.
+La création de catégories de produits se fait depuis l'interface de Dolibarr dans `Produits|Services -> Tags/catégories`.
+
+[IMPORTANT]
+Pour une prise en compte des sous catégories, l'option "Lier automatiquement avec le(a) tag/catégorie parent(e)" doit être activer dans `Accueil -> Configuration -> Modules -> Libellés/Catégories`. 
+
+---
+
+== CHANGELOG
+[%collapsible]
+====
+[1.0] [Février 2023] Création de la documentation
+====
+
+
+
